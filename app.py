@@ -78,9 +78,14 @@ with right:
         cols[3].metric("Latency", f"{r['latency_ms']['total']:.0f} ms", r["language"].upper(), delta_color="off")
 
         esc = r["escalation"]
-        (st.error if esc["escalate"] else st.success)(
-            ("🚨 Escalate to On-Call Engineer" if esc["escalate"] else "✅ Auto-Draft Ready")
-            + "".join(f"\n- {x}" for x in esc["reasons"]))
+        # Only the gate's "Critical:" rule pages on-call; every other escalation goes to human review.
+        if not esc["escalate"]:
+            show, label = st.success, "✅ Auto-Draft Ready"
+        elif any(x.startswith("Critical") for x in esc["reasons"]):
+            show, label = st.error, "🚨 Page On-Call Engineer"
+        else:
+            show, label = st.warning, "⚠️ Needs Human Review"
+        show(label + "".join(f"\n- {x}" for x in esc["reasons"]))
 
         st.subheader("Draft reply")
         if r["draft"]:
