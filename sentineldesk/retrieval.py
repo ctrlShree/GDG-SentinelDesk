@@ -1,30 +1,73 @@
-"""Dense retrieval over the KB (stub: fixed fake hits)."""
+"""Dense retrieval over the KB: multilingual-e5-small embeddings + FAISS inner-product index.
+
+Build the index first with `python scripts/build_index.py` (writes models/kb.faiss + models/kb_meta.parquet).
+"""
 import numpy as np
 
-_FAKE = [
-    ("TKT-00042", "VPN connection drops", "Our VPN disconnects every few minutes.",
-     "Please update the VPN client to the latest version and re-import the profile.", "en", "Incident", "IT Support", "high"),
-    ("TKT-01337", "Passwort zurücksetzen", "Ich kann mein Passwort nicht zurücksetzen.",
-     "Bitte nutzen Sie den Link 'Passwort vergessen' im Anmeldeportal.", "de", "Request", "Technical Support", "medium"),
-    ("TKT-02718", "Cannot log in to portal", "Login fails with an error after the update.",
-     "Clear the browser cache and reset your password via the self-service portal.", "en", "Problem", "Technical Support", "medium"),
-    ("TKT-03141", "Email sync not working", "Outlook stopped syncing since this morning.",
-     "Remove and re-add the account, then restart Outlook.", "en", "Incident", "IT Support", "medium"),
-    ("TKT-04669", "Request new laptop setup", "New hire needs laptop provisioned.",
-     "We have scheduled the provisioning; the device will be ready within 2 business days.", "en", "Request", "IT Support", "low"),
-]
-_SCORES = [0.92, 0.89, 0.86, 0.83, 0.80]
-_KEYS = ("ticket_id", "subject", "body", "answer", "language", "type", "queue", "priority")
+from sentineldesk import MODELS_DIR
+
+MODEL_NAME = "intfloat/multilingual-e5-small"
+INDEX_PATH = MODELS_DIR / "kb.faiss"
+META_PATH = MODELS_DIR / "kb_meta.parquet"
+META_COLS = ["ticket_id", "subject", "body", "answer", "language", "type", "queue", "priority"]
+BATCH_SIZE = 64
+
+_model = None   # shared across Retriever instances (pipeline + tests) so the model loads once
+_index = None
+_meta = None
+
+
+def get_model():
+    global _model
+    if _model is None:
+        from sentence_transformers import SentenceTransformer
+        _model = SentenceTransformer(MODEL_NAME)
+    return _model
+
+
+def encode(texts: list[str], prefix: str, show_progress: bool = False) -> np.ndarray:
+    """Embed texts with an e5 prefix ("query: " or "passage: "). Returns float32, L2-normalised rows."""
+    model = get_model()
+    if not texts:
+        return np.zeros((0, model.get_sentence_embedding_dimension()), dtype="float32")
+    v = model.encode([prefix + (t or "") for t in texts], batch_size=BATCH_SIZE,
+                     normalize_embeddings=True, convert_to_numpy=True, show_progress_bar=show_progress)
+    return np.ascontiguousarray(v, dtype="float32")
+
+
+def _load_index():
+    global _index, _meta
+    if _index is None:
+        if not (INDEX_PATH.exists() and META_PATH.exists()):
+            raise FileNotFoundError(f"{INDEX_PATH} / {META_PATH} missing: run `python scripts/build_index.py` first")
+        import faiss
+        import pandas as pd
+        _index = faiss.read_index(str(INDEX_PATH))
+        _meta = pd.read_parquet(META_PATH)[META_COLS].fillna("").astype(str).to_dict("records")
+        if _index.ntotal != len(_meta):
+            raise RuntimeError(f"index has {_index.ntotal} vectors but meta has {len(_meta)} rows: rebuild the index")
+    return _index, _meta
 
 
 class Retriever:
     dim = 384
 
+    def __init__(self):
+        self.index, self.meta = _load_index()
+        get_model()
+
     def embed(self, texts: list[str], is_query: bool = True) -> np.ndarray:
-        rng = np.random.default_rng(abs(hash(tuple(texts))) % (2**32))
-        v = rng.normal(size=(len(texts), self.dim)).astype("float32")
-        return v / np.linalg.norm(v, axis=1, keepdims=True)
+        return encode(list(texts), "query: " if is_query else "passage: ")
 
     def search(self, text: str, k: int = 5) -> list[dict]:
-        hits = [dict(zip(_KEYS, row), score=s) for row, s in zip(_FAKE, _SCORES)]
-        return hits[:k]
+        if not (text or "").strip() or k <= 0:
+            return []
+        q = self.embed([text], is_query=True)
+        scores, idx = self.index.search(q, min(k, self.index.ntotal))
+        hits = []
+        for s, i in zip(scores[0], idx[0]):
+            if i < 0:
+                continue
+            hits.append({**self.meta[i], "score": float(s)})
+        hits.sort(key=lambda h: h["score"], reverse=True)
+        return hits
