@@ -1,0 +1,20 @@
+data/
+models/
+reports/
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+# frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+npm-debug.log*
+# os/editor
+.DS_Store
+.vscode/
+.idea/

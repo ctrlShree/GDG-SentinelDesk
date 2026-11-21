@@ -1,0 +1,24 @@
+# --- Shared / C (pipeline, API, fallback UI) ---
+fastapi
+uvicorn[standard]
+httpx          # FastAPI TestClient
+pydantic>=2
+streamlit      # fallback UI only
+pandas
+pyarrow
+numpy
+python-dotenv
+pytest
+datasets
+# --- A (triage, gate, eval) ---
+scikit-learn
+joblib
+langdetect
+matplotlib
+# --- B (retrieval, PII, generation, validator) ---
+sentence-transformers
+faiss-cpu
+google-genai
+regex
+# Frontend dependencies live in frontend/package.json (Node.js 20 LTS)
+# Pin versions (==) once everything works: pip freeze

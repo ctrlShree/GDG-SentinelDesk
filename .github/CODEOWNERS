@@ -1,0 +1,33 @@
+# Replace placeholders with real GitHub handles
+# A: skeleton, data, triage, gate, evaluation
+/sentineldesk/__init__.py   @DEV_A
+/sentineldesk/data.py       @DEV_A
+/sentineldesk/lang.py       @DEV_A
+/sentineldesk/triage.py     @DEV_A
+/sentineldesk/escalation.py @DEV_A
+/scripts/train_triage.py    @DEV_A
+/scripts/evaluate.py        @DEV_A
+/tests/test_a_triage.py     @DEV_A
+/tests/test_a_gate.py       @DEV_A
+/tests/test_leakage.py      @DEV_A
+/tests/edge_cases.jsonl     @DEV_A
+/docs/gate.md               @DEV_A
+# B: retrieval, PII, generation, validator
+/sentineldesk/retrieval.py  @DEV_B
+/sentineldesk/pii.py        @DEV_B
+/sentineldesk/llm.py        @DEV_B
+/sentineldesk/validator.py  @DEV_B
+/sentineldesk/generator.py  @DEV_B
+/scripts/build_index.py     @DEV_B
+/tests/test_b_rag.py        @DEV_B
+# C: pipeline, API, Node.js frontend, docs
+/sentineldesk/pipeline.py   @DEV_C
+/sentineldesk/burst.py      @DEV_C
+/api.py                     @DEV_C
+/frontend/                  @DEV_C
+/app.py                     @DEV_C
+/tests/test_c_pipeline.py   @DEV_C
+/tests/test_c_api.py        @DEV_C
+/README.md                  @DEV_C
+# Shared contracts: all three approve
+/PLAN.md                    @DEV_A @DEV_B @DEV_C
