@@ -6,8 +6,9 @@
 2 Low classifier confidence: per-target thresholds. Queue has ~50 classes, so its max
   probability is ~0.2 on normal tickets and needs a much lower bar than type/priority.
 3 No sufficiently similar precedent (hard stop): top retrieval score < TAU_SIM, or no hits.
-4 Unsupported request: risky intent (refund, pricing, legal, destructive, credentials)
-  that no retrieved precedent answer covers.
+4 Unsupported request: refund, legal/SLA, destructive and credential asks ALWAYS escalate
+  (money, liability and security need a human, even if a past answer mentions a refund);
+  pricing escalates only when no retrieved precedent answer covers it.
 5 Possible prompt injection (hard stop: never send it to the LLM).
 6 Draft not grounded in evidence (B's validator), only in decide().
 """
@@ -23,7 +24,7 @@ TAU_CONF = 0.45
 # Tuned on out-of-sample kb validation probabilities by scripts/tune_gate.py (see docs/gate.md);
 # models/gate.json overrides these when present.
 CONF_THRESHOLDS = {"type": 0.45, "queue": 0.25, "priority": 0.50}  # on temperature-calibrated confidences
-TAU_SIM = 0.80  # placeholder until B's score distribution; models/gate.json overrides
+TAU_SIM = 0.858  # tuned on B's e5 index by scripts/tune_gate.py (see docs/gate.md); models/gate.json overrides
 GATE_CONFIG = MODELS_DIR / "gate.json"
 
 _OUTAGE = re.compile(
@@ -51,6 +52,9 @@ RISKY_INTENTS = {
     "credentials": r"admin password|share (your |the )?credentials|zugangsdaten",
 }
 _INTENT_RE = {k: re.compile(rf"\b({v})", re.I) for k, v in RISKY_INTENTS.items()}
+# Never auto-resolved: with the real KB, answers like "we will process the necessary refund"
+# made polite refund requests count as "covered" and auto-draft a money commitment.
+ALWAYS_ESCALATE = frozenset({"refund", "legal", "destructive", "credentials"})
 
 _INJECTION = re.compile(
     r"(ignore (all |any )?(the )?(previous|prior|above) (instructions|rules)|ignore all instructions|"
@@ -88,6 +92,9 @@ def risky_intents(text: str) -> list[str]:
 
 
 def intent_covered(intent: str, hits: list[dict]) -> bool:
+    """True if a precedent answer handles this kind of ask. ALWAYS_ESCALATE intents are never covered."""
+    if intent in ALWAYS_ESCALATE:
+        return False
     return any(_INTENT_RE[intent].search(h.get("answer") or "") for h in hits)
 
 
@@ -122,7 +129,9 @@ def pre_check(triage: dict, hits: list[dict], text: str) -> dict:
         reasons.append("Low classifier confidence: " + ", ".join(low))
     uncovered = [i for i in risky_intents(text) if not intent_covered(i, hits)]
     if uncovered:
-        reasons.append(f"Unsupported request ({', '.join(uncovered)}) not covered by historical resolutions")
+        needs_human = [i for i in uncovered if i in ALWAYS_ESCALATE]
+        why = "needs human approval" if needs_human else "not covered by historical resolutions"
+        reasons.append(f"Unsupported request ({', '.join(uncovered)}): {why}")
     if looks_like_injection(text):
         reasons.append("Possible prompt injection: instructions to the assistant were ignored")
         hard = True

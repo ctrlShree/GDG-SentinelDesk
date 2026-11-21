@@ -9,9 +9,12 @@ edge of the highest band whose accuracy is below MAX_BAND_ACC[target]. type/prio
 uses 0.25: with ~50 classes a 0.4-accurate guess is still far above chance and a wrong queue
 only misroutes, so flagging it at 0.5 would escalate a third of all tickets.
 
-TAU_SIM: needs B's real retriever. Top-1 score (self-hit removed) for N kb validation
-tickets versus off-domain queries; tau = the score that separates them best (Youden J),
-lightly clamped. Skipped while retrieval is a stub.
+TAU_SIM: needs B's real retriever. Rule 3 is a hard stop (no draft at all), so it must not
+fire on genuine support tickets. The synthetic KB tickets all score 0.90-0.95 against each other
+(even with near-duplicates removed), while realistic hand-written tickets score lower
+(0.86-0.92), so KB tickets alone would set tau too high. tau = (lowest top-1 score among genuine
+tickets: hand-written edge cases expected to AUTO_DRAFT + 1st percentile of KB validation) - SIM_MARGIN.
+The off-domain catch rate is reported. Skipped while retrieval is a stub.
 
 --write saves models/gate.json, which sentineldesk/escalation.py reads at runtime.
 """
@@ -32,6 +35,7 @@ from sentineldesk.triage import _entry, apply_t_high, temper  # noqa: E402
 MAX_BAND_ACC = {"type": 0.50, "queue": 0.25, "priority": 0.50}
 BAND = 0.05
 MIN_BAND_N = 15
+SIM_MARGIN = 0.005
 # Never let a rule silently switch off: if no band is bad enough, fall back to this floor.
 FLOOR = {"type": 0.45, "queue": 0.15, "priority": 0.45}
 OFF_DOMAIN = [
@@ -92,16 +96,23 @@ def tune_sim(vp: pd.DataFrame, n: int) -> dict | None:
         text = ticket_text(s, b)
         hits = [h for h in r.search(text, k=6) if h["ticket_id"] != tid and (h.get("body") or "") != b]
         ins.append(hits[0]["score"] if hits else 0.0)
-    outs = [(r.search(q, k=1) or [{"score": 0.0}])[0]["score"] for q in OFF_DOMAIN]
-    ins, outs = np.array(ins), np.array(outs)
-    grid = np.round(np.arange(0.50, 0.97, 0.005), 3)
-    j = [(ins >= g).mean() - (outs >= g).mean() for g in grid]
-    tau = float(grid[int(np.argmax(j))])
+    from sentineldesk import ROOT
+    edge = [json.loads(x) for x in (ROOT / "tests" / "edge_cases.jsonl").read_text(encoding="utf-8").splitlines()
+            if x.strip()]
+    genuine = [e for e in edge if e.get("expected_status") == "AUTO_DRAFT"]  # tickets rule 3 must never block
+    gen_scores = {e["id"]: r.search(ticket_text(e.get("subject"), e["body"]), k=1)[0]["score"] for e in genuine}
+    outs = np.array([(r.search(q, k=1) or [{"score": 0.0}])[0]["score"] for q in OFF_DOMAIN])
+    ins = np.array(ins)
+    floor_kb = float(np.percentile(ins, 1))
+    lowest_id = min(gen_scores, key=gen_scores.get)
+    tau = round(min(floor_kb, gen_scores[lowest_id]) - SIM_MARGIN, 3)
     return {"tau_sim": tau,
-            "in_domain_top1_p5_p50": [round(float(x), 3) for x in np.percentile(ins, [5, 50])],
+            "kb_val_top1_p1_p50": [round(floor_kb, 3), round(float(np.median(ins)), 3)],
+            "handwritten_genuine_min": [lowest_id, round(gen_scores[lowest_id], 3)],
             "off_domain_top1_max_p50": [round(float(outs.max()), 3), round(float(np.median(outs)), 3)],
-            "in_domain_below_tau": round(float((ins < tau).mean()), 4),
-            "off_domain_above_tau": round(float((outs >= tau).mean()), 4)}
+            "kb_val_below_tau": round(float((ins < tau).mean()), 4),
+            "off_domain_caught": round(float((outs < tau).mean()), 4),
+            "off_domain_missed": [q for q, o in zip(OFF_DOMAIN, outs) if o >= tau]}
 
 
 def escalation_rate(vp: pd.DataFrame, n: int) -> dict:

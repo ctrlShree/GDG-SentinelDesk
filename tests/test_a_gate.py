@@ -67,9 +67,20 @@ def test_risky_intents(text, intent):
 
 
 def test_intent_covered_by_precedent():
-    hits = [{**HITS[0], "answer": "We issued a refund to your card within 5 days."}]
-    assert intent_covered("refund", hits)
-    assert not any("Unsupported" in x for x in pre_check(tri(), hits, "Can I get a refund?")["reasons"])
+    # pricing can be answered from precedent ...
+    hits = [{**HITS[0], "answer": "Our current price list and discount tiers are attached."}]
+    assert intent_covered("pricing", hits)
+    assert not any("Unsupported" in x for x in pre_check(tri(), hits, "Can I get a discount?")["reasons"])
+
+
+def test_money_and_legal_always_escalate():
+    # ... but refunds / legal commitments always need a human, even if a past answer mentions one
+    hits = [{**HITS[0], "answer": "We issued a refund to your card within 5 days. Our SLA guarantee applies."}]
+    assert not intent_covered("refund", hits) and not intent_covered("legal", hits)
+    for text in ("Can I get a refund?", "Could you possibly reimburse the duplicate charge?",
+                 "Wäre eventuell eine Gutschrift möglich?", "Please confirm the SLA guarantee in writing"):
+        r = decide(tri(), hits, text, {"grounded": True, "issues": []})
+        assert r["status"] == "ESCALATE" and any("Unsupported" in x for x in r["reasons"])
 
 
 @pytest.mark.parametrize("text", [
