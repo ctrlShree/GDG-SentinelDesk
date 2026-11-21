@@ -64,7 +64,7 @@ export default function DraftPanel({ r }: { r: PipelineResult }) {
         </>
       )}
       <details className="mt-4 text-sm">
-        <summary className="cursor-pointer text-slate-500">Text sent to models (PII-masked)</summary>
+        <summary className="cursor-pointer text-slate-500">Text sent to models{r.pii_masked ? " (PII masked)" : ""}</summary>
         <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-3 text-xs">{r.masked_text}</pre>
       </details>
     </Card>
