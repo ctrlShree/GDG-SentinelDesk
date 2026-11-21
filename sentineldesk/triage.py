@@ -1,7 +1,93 @@
-"""Triage classifier (stub: keyword rule until scripts/train_triage.py lands)."""
-from sentineldesk import TARGETS
+"""Triage classifier (Dev A): type, queue, priority, each with a confidence.
+
+Loads models/triage.joblib ({target: sklearn Pipeline}) and models/triage_config.json
+(written by scripts/train_triage.py). The model is loaded once per process and shared by
+every Triager(). If it hasn't been trained yet, a keyword heuristic keeps the contract so
+the API and tests still run.
+
+Priority uses a tuned threshold `t_high`: if P(high) + P(critical) >= t_high the label is the
+more likely of {high, critical}, otherwise the argmax of the remaining classes. This trades
+some priority precision for high-priority recall (missing an outage is the costly error).
+"""
+from __future__ import annotations
+
+import functools
+import json
+import logging
+
+from sentineldesk import MODELS_DIR, TARGETS
 from sentineldesk.data import ticket_text
 
+log = logging.getLogger(__name__)
+
+MODEL_PATH = MODELS_DIR / "triage.joblib"
+CONFIG_PATH = MODELS_DIR / "triage_config.json"
+HIGH_LABELS = frozenset({"high", "critical"})
+
+
+def apply_t_high(probs: dict, t_high: float | None) -> str:
+    """Priority decision rule shared by training (threshold tuning) and inference."""
+    hi = {k: v for k, v in probs.items() if k in HIGH_LABELS}
+    if t_high is None or not hi:
+        return max(probs, key=probs.get)
+    if sum(hi.values()) >= t_high:
+        return max(hi, key=hi.get)
+    rest = {k: v for k, v in probs.items() if k not in HIGH_LABELS}
+    return max(rest, key=rest.get) if rest else max(probs, key=probs.get)
+
+
+def _entry(label: str, probs: dict) -> dict:
+    probs = {str(k): float(v) for k, v in probs.items()}
+    if label in HIGH_LABELS and label != max(probs, key=probs.get):
+        conf = sum(v for k, v in probs.items() if k in HIGH_LABELS)  # chosen via t_high
+    else:
+        conf = probs[label]
+    return {"label": str(label), "confidence": round(float(min(max(conf, 0.0), 1.0)), 4),
+            "probs": {k: round(v, 4) for k, v in probs.items()}}
+
+
+@functools.lru_cache(maxsize=1)
+def _load():
+    if not MODEL_PATH.exists():
+        log.warning("No trained triage model at %s; using keyword heuristic. Run scripts/train_triage.py",
+                    MODEL_PATH)
+        return None, {}
+    import joblib
+
+    models = joblib.load(MODEL_PATH)
+    config = json.loads(CONFIG_PATH.read_text(encoding="utf-8")) if CONFIG_PATH.exists() else {}
+    return models, config
+
+
+class Triager:
+    def __init__(self):
+        self.models, self.config = _load()
+        self.t_high = self.config.get("t_high")
+
+    @property
+    def trained(self) -> bool:
+        return self.models is not None
+
+    def predict(self, subject, body) -> dict:
+        return self.predict_many([subject], [body])[0]
+
+    def predict_many(self, subjects, bodies) -> list[dict]:
+        texts = [ticket_text(s, b) for s, b in zip(subjects, bodies)]
+        if self.models is None:
+            return [_heuristic(x) for x in texts]
+        per_target = {t: (self.models[t].classes_, self.models[t].predict_proba(texts)) for t in TARGETS}
+        out = []
+        for i in range(len(texts)):
+            r = {}
+            for t, (classes, P) in per_target.items():
+                probs = dict(zip(classes, P[i]))
+                label = apply_t_high(probs, self.t_high) if t == "priority" else max(probs, key=probs.get)
+                r[t] = _entry(label, probs)
+            out.append(r)
+        return out
+
+
+# ------------------------------------------------------------------ untrained fallback
 _LABELS = {
     "type": ["Incident", "Request", "Problem", "Change"],
     "queue": ["Technical Support", "IT Support", "Product Support", "Customer Service",
@@ -11,22 +97,19 @@ _LABELS = {
 }
 
 
-def _dist(labels: list[str], top: str, conf: float) -> dict[str, float]:
-    rest = (1.0 - conf) / (len(labels) - 1)
-    return {l: round(conf if l == top else rest, 4) for l in labels}
-
-
-class Triager:
-    def predict(self, subject: str, body: str) -> dict:
-        text = ticket_text(subject, body).lower()
-        outage = "outage" in text or "down" in text
-        picks = {
-            "type": ("Incident", 0.86) if outage else ("Request", 0.78),
-            "queue": ("Service Outages and Maintenance", 0.74) if outage else ("Technical Support", 0.66),
-            "priority": ("high", 0.81) if outage else ("low", 0.69),
-        }
-        out = {}
-        for t in TARGETS:
-            label, conf = picks[t]
-            out[t] = {"label": label, "confidence": conf, "probs": _dist(_LABELS[t], label, conf)}
-        return out
+def _heuristic(text: str) -> dict:
+    t = text.lower()
+    outage = any(w in t for w in ("outage", "down", "ausgefallen", "unreachable", "nicht erreichbar"))
+    picks = {
+        "type": ("Incident", 0.86) if outage else ("Request", 0.78),
+        "queue": ("Service Outages and Maintenance", 0.74) if outage else ("Technical Support", 0.66),
+        "priority": ("high", 0.81) if outage else ("low", 0.69),
+    }
+    out = {}
+    for tgt in TARGETS:
+        label, conf = picks[tgt]
+        labels = _LABELS[tgt]
+        rest = (1.0 - conf) / (len(labels) - 1)
+        out[tgt] = {"label": label, "confidence": conf,
+                    "probs": {l: round(conf if l == label else rest, 4) for l in labels}}
+    return out

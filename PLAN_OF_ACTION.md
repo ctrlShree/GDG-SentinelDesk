@@ -13,7 +13,7 @@
 |---|---|---|
 | `sentineldesk/pipeline.py`, `burst.py`, `api.py` (real, all 6 endpoints), `frontend/` console, `app.py` fallback, `README.md` skeleton, `tests/test_c_*.py` | C | ✅ **On `main`**, tested against local stubs |
 | Skeleton: `sentineldesk/__init__.py` + stubs for every A and B module, `requirements.txt`, `.gitignore`, `.env.example`, `tests/test_leakage.py` | A | ✅ **On `main`**; full `pytest -q` green (2 C tests marked xfail until B's real PII + retrieval land) |
-| Real triage, gate, evaluation | A | ⏳ |
+| Real triage, gate, evaluation | A | ✅ **Phase 1 on `main`**: real `Triager` (`python scripts/train_triage.py --fast`, ~7 min), `lang.py`, `tests/test_a_triage.py`. Val macro-F1 type 0.886 / queue 0.897 / priority 0.797; `t_high`=0.37 (high+critical recall 0.81). Notes for Phase 2: priority has `critical`/`very_low` (treat `critical` as high); queue confidence is ~0.2 on real tickets (52 classes) so `TAU_CONF` needs care; demo VPN preset predicts Problem/medium, so rule 1 alone won't fire; kb has 5,370 duplicate bodies (val/test scores inflated). ⏳ Phase 2 gate, Phase 3 eval |
 | Real retrieval, PII, LLM, validator, generator | B | ⏳ |
 
 > ⚠️ **A: do NOT push `api.py`, `app.py`, `pipeline.py`, or `burst.py`.** C's real versions are already on `main`. Your skeleton is everything else (see §6, Phase 0).

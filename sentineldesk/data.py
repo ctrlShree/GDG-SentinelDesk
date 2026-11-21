@@ -29,8 +29,8 @@ def _build() -> tuple[pd.DataFrame, pd.DataFrame]:
     df = load_dataset(DATASET)["train"].to_pandas()
     df = df.sample(frac=1.0, random_state=SEED).reset_index(drop=True)
     df.insert(0, "ticket_id", [f"TKT-{i:05d}" for i in range(len(df))])
-    df["subject"] = df["subject"].fillna("")
-    df["body"] = df["body"].fillna("")
+    for c in ("subject", "body", "answer"):
+        df[c] = df[c].fillna("")
     cut = int(len(df) * KB_FRAC)
     kb_df, test_df = df.iloc[:cut].reset_index(drop=True), df.iloc[cut:].reset_index(drop=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
