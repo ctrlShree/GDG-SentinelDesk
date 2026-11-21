@@ -85,6 +85,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--fast", action="store_true", help="smaller feature space for quick iteration")
     ap.add_argument("--skip-final", action="store_true", help="validate only, don't retrain/save")
+    ap.add_argument("--out-dir", type=Path, default=MODELS_DIR, help="where to save (default models/)")
     args = ap.parse_args()
 
     kb = load_kb()
@@ -134,6 +135,15 @@ def main() -> None:
     hp["hp_incident_recall_rule1"] = round(float(pred_hi_inc[true_hi_inc].mean()), 4)
     print(f"[val] high-priority Incident recall via rule 1 alone: {hp['hp_incident_recall_rule1']}")
 
+    # Out-of-sample validation probabilities, for gate threshold tuning (scripts/tune_gate.py).
+    vp = va[["ticket_id", "subject", "body", *TARGETS]].copy()
+    for t in TARGETS:
+        P = val_models[t].predict_proba(va["text"])
+        vp[f"probs_{t}"] = [json.dumps({str(c): round(float(x), 5) for c, x in zip(val_models[t].classes_, row)})
+                            for row in P]
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    vp.to_parquet(args.out_dir / "val_preds.parquet", index=False)
+
     config = {
         "trained_on": "kb",
         "n_train": int(len(kb)),
@@ -152,10 +162,11 @@ def main() -> None:
     for t in TARGETS:
         config["labels_" + t] = [str(c) for c in final[t].classes_]
 
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    joblib.dump(final, MODELS_DIR / "triage.joblib", compress=3)
-    (MODELS_DIR / "triage_config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
-    print(f"saved {MODELS_DIR / 'triage.joblib'} and triage_config.json")
+    out = args.out_dir
+    out.mkdir(parents=True, exist_ok=True)
+    joblib.dump(final, out / "triage.joblib", compress=3)
+    (out / "triage_config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+    print(f"saved {out / 'triage.joblib'} and triage_config.json", flush=True)
 
 
 if __name__ == "__main__":

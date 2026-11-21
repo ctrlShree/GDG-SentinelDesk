@@ -20,7 +20,9 @@ from sentineldesk import MODELS_DIR, TARGETS
 from sentineldesk.triage import HIGH_LABELS
 
 TAU_CONF = 0.45
-CONF_THRESHOLDS = {"type": TAU_CONF, "queue": 0.10, "priority": TAU_CONF}
+# Tuned on out-of-sample kb validation probabilities by scripts/tune_gate.py (see docs/gate.md);
+# models/gate.json overrides these when present.
+CONF_THRESHOLDS = {"type": 0.50, "queue": 0.20, "priority": 0.45}
 TAU_SIM = 0.80  # placeholder until B's score distribution; models/gate.json overrides
 GATE_CONFIG = MODELS_DIR / "gate.json"
 
@@ -47,10 +49,22 @@ _INJECTION = re.compile(
     re.I)
 
 
-def _tau_sim() -> float:
+def _gate_config() -> dict:
+    """models/gate.json, written by scripts/tune_gate.py --write (KB-only tuning)."""
     if GATE_CONFIG.exists():
-        return float(json.loads(GATE_CONFIG.read_text(encoding="utf-8")).get("tau_sim", TAU_SIM))
-    return TAU_SIM
+        try:
+            return json.loads(GATE_CONFIG.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+    return {}
+
+
+def _tau_sim() -> float:
+    return float(_gate_config().get("tau_sim", TAU_SIM))
+
+
+def _conf_thresholds() -> dict:
+    return {**CONF_THRESHOLDS, **_gate_config().get("conf_thresholds", {})}
 
 
 def risky_intents(text: str) -> list[str]:
@@ -85,8 +99,9 @@ def pre_check(triage: dict, hits: list[dict], text: str) -> dict:
     if top < tau:
         reasons.append(f"No sufficiently similar precedent (top score {top:.2f} < {tau:.2f})")
         hard = True
+    conf_min = _conf_thresholds()
     low = [f"{t} {triage[t]['confidence']:.2f}" for t in TARGETS
-           if triage[t]["confidence"] < CONF_THRESHOLDS[t]]
+           if triage[t]["confidence"] < conf_min[t]]
     if low:
         reasons.append("Low classifier confidence: " + ", ".join(low))
     uncovered = [i for i in risky_intents(text) if not intent_covered(i, hits)]
