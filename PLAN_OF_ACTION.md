@@ -49,7 +49,7 @@ Next.js console (frontend/, Node 20)  ──/api/* proxy──►  FastAPI (api.
 - **Frontend:** Next.js 14 (App Router) + TypeScript + Tailwind. It never touches models; it only calls the REST API.
 - **Classifier:** TF-IDF (word 1–2-gram + char_wb 3–5-gram) → one LogisticRegression per target, `class_weight="balanced"`.
 - **Embeddings:** `intfloat/multilingual-e5-small`, local, with `passage:` / `query:` prefixes. EN and DE share one space, so cross-lingual matching is free.
-- **LLM:** Gemini through **one helper**, `llm.generate_json`, in JSON mode, model from `GEMINI_MODEL` (default `gemini-2.5-flash`). An **extractive template fallback** covers no key, errors, and timeouts, so the demo never breaks.
+- **LLM:** Gemini through **one helper**, `llm.generate_json`, in JSON mode, model from `GEMINI_MODEL`: **use `gemini-3.8-flash`** (`gemini-2.5-flash` now returns 404 "no longer available to new users"; verified 3.8-flash works with the team key, JSON mode, ~5 s). An **extractive template fallback** covers no key, errors, and timeouts, so the demo never breaks.
 
 ## 4. Frozen contracts
 
