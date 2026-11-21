@@ -78,3 +78,11 @@ def test_burst_ignores_non_incidents():
     for i in range(4):
         r = b.add(f"R{i}", _unit([1, 0, 0, 0]), REQUEST, ts=i)
     assert not r["outage"]
+
+
+def test_burst_counts_critical_priority():
+    b = BurstDetector()
+    crit = {"type": {"label": "Request"}, "queue": {"label": "IT Support"}, "priority": {"label": "critical"}}
+    for i in range(3):
+        r = b.add(f"C{i}", _unit([1, 0, 0, 0]), crit, ts=i, text="login outage")
+    assert r["outage"] and r["cluster_size"] == 3

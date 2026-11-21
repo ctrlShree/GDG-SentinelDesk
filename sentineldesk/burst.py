@@ -18,6 +18,7 @@ WINDOW_S = 15 * 60
 SIM_THRESHOLD = float(os.getenv("BURST_SIM_THRESHOLD", "0.85"))
 MIN_NEIGHBOURS = 2
 INCIDENT_TYPES = {"Incident", "Problem"}
+HIGH_PRIORITIES = {"high", "critical"}  # the dataset also has "critical"
 
 _STOP = set("""the and for with that this from have has are was were not our your you all any can
 cannot will been into they them their there what when which while about after again also very
@@ -26,7 +27,7 @@ mit von für auf sind wir ich sie bitte kein keine seit noch auch aber oder wenn
 
 
 def _incident_like(triage: dict) -> bool:
-    return (triage.get("priority", {}).get("label") == "high"
+    return (triage.get("priority", {}).get("label") in HIGH_PRIORITIES
             or triage.get("type", {}).get("label") in INCIDENT_TYPES)
 
 
