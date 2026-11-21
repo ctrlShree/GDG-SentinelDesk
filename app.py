@@ -82,7 +82,7 @@ with right:
         if not esc["escalate"]:
             show, label = st.success, "✅ Auto-Draft Ready"
         elif any(x.startswith("Critical") for x in esc["reasons"]):
-            show, label = st.error, "🚨 Page On-Call Engineer"
+            show, label = st.error, "🚨 Escalate to On-Call Engineer"
         else:
             show, label = st.warning, "⚠️ Needs Human Review"
         show(label + "".join(f"\n- {x}" for x in esc["reasons"]))
