@@ -4,9 +4,9 @@ import { cx, fmtMs, pct, priorityTone } from "@/lib/ui";
 function Tile({ name, l, chip }: { name: string; l: Label; chip?: string }) {
   const low = l.confidence < 0.45;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{name}</p>
-      <p className="mt-1 text-xl font-bold text-slate-900">
+      <p className="mt-1 break-words text-xl font-bold leading-snug text-slate-900" title={l.label}>
         {chip ? <span className={cx("rounded-full px-3 py-0.5 ring-1", chip)}>{l.label}</span> : l.label}
       </p>
       <div className="mt-3 h-2 rounded-full bg-slate-100">
@@ -26,7 +26,7 @@ export default function PredictionTiles({ r }: { r: PipelineResult }) {
       <Tile name="Type" l={r.triage.type} />
       <Tile name="Queue" l={r.triage.queue} />
       <Tile name="Priority" l={r.triage.priority} chip={priorityTone[r.triage.priority.label] ?? priorityTone.low} />
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Language · Latency</p>
         <p className="mt-1 text-xl font-bold">
           <span className="rounded bg-slate-900 px-2 py-0.5 text-white">{r.language.toUpperCase()}</span>
