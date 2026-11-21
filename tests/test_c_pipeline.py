@@ -7,8 +7,6 @@ from sentineldesk.retrieval import INDEX_PATH
 
 KEYS = {"ticket_id", "language", "pii_masked", "masked_text", "triage", "hits", "draft",
         "draft_for_human_review", "escalation", "burst", "latency_ms"}
-# pii.py is still a no-op stub. Drop this marker when the real one lands.
-NEEDS_REAL_PII = pytest.mark.xfail(reason="mask_pii is still a stub", strict=False)
 
 
 @pytest.fixture(scope="module")
@@ -29,7 +27,6 @@ def test_contract(p):
     assert all(isinstance(h["score"], float) for h in r["hits"])
 
 
-@NEEDS_REAL_PII
 def test_null_subject_german_pii(p):
     r = p.run(None, "Passwort vergessen, bitte zurücksetzen. Mail: max@firma.de")
     assert r["language"] == "de" and r["pii_masked"] and "max@firma.de" not in r["masked_text"]

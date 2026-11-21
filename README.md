@@ -7,7 +7,7 @@ SentinelDesk triages raw helpdesk tickets (English or German), decides whether a
 
 ## 1. What it does
 For every incoming ticket (subject optional + body) the system:
-1. **PII hook** (not finished): the pipeline calls `mask_pii` first, before any model sees the text, but `pii.py` is still a pass-through stub, so nothing is masked yet.
+1. **Masks PII** (emails, phone numbers, IBANs, card numbers, IP addresses, account numbers) with plain regex before any model or LLM sees the text. Names and free-form postal addresses are not caught.
 2. **Detects language** (`en` / `de`) automatically.
 3. **Classifies** `type`, `queue`, and `priority` with a confidence score for each.
 4. **Retrieves** the top 5 most similar tickets from the historical knowledge base (cross-lingual: a German ticket can match English precedents).
@@ -113,18 +113,18 @@ All thresholds are tuned on a validation slice of the knowledge base only, never
 The dataset is shuffled with `random_state=42` and split 80/20 exactly as in the problem statement. Only the 80% split is used for training and for the retrieval index. The 20% holdout's `answer`, `type`, `queue`, and `priority` are read **only** by `scripts/evaluate.py`; `tests/test_leakage.py` enforces this and checks that no holdout ticket ID is in the index.
 
 ## 8. Hallucination safeguards
-- The LLM sees only the ticket and the numbered retrieved precedents. (PII masking is wired in but not implemented yet; embeddings and search run locally.)
+- The LLM sees only the PII-masked ticket and the numbered retrieved precedents; embeddings and search run locally.
 - The prompt forbids inventing pricing, SLAs, refunds, legal guarantees, or integrations.
 - The validator drops citations that aren't in the retrieved set; a draft with no valid citations is marked ungrounded and escalated.
 - If Gemini is unavailable or times out, an extractive template built from the precedents is used instead.
 
 ## 9. Bonus features
 - **Cross-lingual retrieval**: multilingual e5 embeddings put EN and DE in one space.
-- **PII guardrail**: *not done.* The pipeline step and the console's "PII masked" tag exist, but `sentineldesk/pii.py` is still a stub.
+- **PII guardrail**: regex masking (`[EMAIL]`, `[PHONE]`, `[IBAN]`, `[CARD]`, `[IP]`, `[ACCOUNT]`) runs first, before triage, search or Gemini. The console shows a "PII masked" tag and the exact text sent to the models. Regex, not an LLM, so personal data is never sent anywhere to be detected.
 - **Outage burst banner**: an incident-like ticket (high/critical priority or type Incident/Problem) with two or more similar tickets in the last 15 minutes raises the banner. Raw e5 cosines between *any* two tickets are ~0.86, so similarities are computed on embeddings centered by the mean KB ticket embedding (cached in `models/burst_center.npz`), threshold 0.55. On real KB incidents this gives a ~0.2% false-outage rate for 10 unrelated tickets, while EN + DE tickets about the same VPN outage cluster.
 
 ## 10. Limitations
-- **PII masking is not implemented** (`pii.py` is a stub), so ticket text goes to Gemini unmasked.
+- PII masking is regex-based: names and free-form postal addresses are not masked (that needs an NER model).
 - The demo-style tickets are shorter and less formal than the dataset's synthetic tickets, so the gate is sometimes more cautious than needed (for example, a short German password reset can be classified as a high-priority Incident and escalated). That is the safe direction.
 - Risky-ask detection is keyword-based (EN + DE lexicons). A politely paraphrased refund request without those keywords can slip past rule 4; the draft validator (rule 6) is the backstop.
 - Burst detection keeps its state in the API process memory, so it resets when the server restarts.
