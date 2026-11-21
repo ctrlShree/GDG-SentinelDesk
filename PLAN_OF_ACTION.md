@@ -12,7 +12,7 @@
 | Area | Owner | Status |
 |---|---|---|
 | `sentineldesk/pipeline.py`, `burst.py`, `api.py` (real, all 6 endpoints), `frontend/` console, `app.py` fallback, `README.md` skeleton, `tests/test_c_*.py` | C | ✅ **On `main`**, tested against local stubs |
-| Skeleton: `sentineldesk/__init__.py` + stubs for every A and B module, `requirements.txt`, `.gitignore`, `.env.example`, `tests/test_leakage.py` | A | ⏳ Not pushed. **Blocking:** `main` won't import until this lands |
+| Skeleton: `sentineldesk/__init__.py` + stubs for every A and B module, `requirements.txt`, `.gitignore`, `.env.example`, `tests/test_leakage.py` | A | ✅ **On `main`**; full `pytest -q` green (2 C tests marked xfail until B's real PII + retrieval land) |
 | Real triage, gate, evaluation | A | ⏳ |
 | Real retrieval, PII, LLM, validator, generator | B | ⏳ |
 
