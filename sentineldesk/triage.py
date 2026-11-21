@@ -8,12 +8,19 @@ the API and tests still run.
 Priority uses a tuned threshold `t_high`: if P(high) + P(critical) >= t_high the label is the
 more likely of {high, critical}, otherwise the argmax of the remaining classes. This trades
 some priority precision for high-priority recall (missing an outage is the costly error).
+
+Calibration: the balanced logistic regressions are underconfident (val queue: mean confidence
+0.49 vs accuracy 0.63). scripts/calibrate_triage.py fits one temperature T per target on the
+out-of-sample validation probabilities; probabilities are rescaled as softmax(log p / T).
+This never changes the argmax, only the confidences (and t_high is re-tuned after it).
 """
 from __future__ import annotations
 
 import functools
 import json
 import logging
+
+import numpy as np
 
 from sentineldesk import MODELS_DIR, TARGETS
 from sentineldesk.data import ticket_text
@@ -23,6 +30,25 @@ log = logging.getLogger(__name__)
 MODEL_PATH = MODELS_DIR / "triage.joblib"
 CONFIG_PATH = MODELS_DIR / "triage_config.json"
 HIGH_LABELS = frozenset({"high", "critical"})
+
+
+def temper(P: np.ndarray, T: float | None) -> np.ndarray:
+    """Temperature-scale probability rows: softmax(log p / T). T < 1 sharpens, T > 1 flattens."""
+    if not T or T == 1.0:
+        return P
+    logits = np.log(np.clip(P, 1e-12, 1.0)) / T
+    logits -= logits.max(axis=-1, keepdims=True)
+    e = np.exp(logits)
+    return e / e.sum(axis=-1, keepdims=True)
+
+
+def choose_t_high(p_high: np.ndarray, y_is_high: np.ndarray, target_recall: float = 0.80) -> float:
+    """Largest threshold on P(high-priority) whose recall is >= target_recall (0.01 grid)."""
+    best = 0.0
+    for t in np.round(np.arange(0.05, 0.951, 0.01), 2):
+        if y_is_high.sum() and (p_high >= t)[y_is_high].mean() >= target_recall:
+            best = float(t)
+    return best
 
 
 def apply_t_high(probs: dict, t_high: float | None) -> str:
@@ -63,6 +89,7 @@ class Triager:
     def __init__(self):
         self.models, self.config = _load()
         self.t_high = self.config.get("t_high")
+        self.temperature = self.config.get("temperature", {})
 
     @property
     def trained(self) -> bool:
@@ -75,7 +102,9 @@ class Triager:
         texts = [ticket_text(s, b) for s, b in zip(subjects, bodies)]
         if self.models is None:
             return [_heuristic(x) for x in texts]
-        per_target = {t: (self.models[t].classes_, self.models[t].predict_proba(texts)) for t in TARGETS}
+        per_target = {t: (self.models[t].classes_,
+                          temper(self.models[t].predict_proba(texts), self.temperature.get(t)))
+                      for t in TARGETS}
         out = []
         for i in range(len(texts)):
             r = {}

@@ -6,6 +6,8 @@ split:
 	python -m sentineldesk.data
 train:
 	python scripts/train_triage.py
+	python scripts/calibrate_triage.py --write
+	python scripts/tune_gate.py --write
 index:
 	python scripts/build_index.py
 test:

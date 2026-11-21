@@ -45,7 +45,7 @@ def test_ungrounded_and_auto():
 def test_low_confidence_per_target():
     r = pre_check(tri(c=0.3), HITS, "reset password")
     assert any("Low classifier confidence" in x for x in r["reasons"]) and not r["hard_stop"]
-    assert not pre_check(tri(qc=0.2), HITS, "reset password")["reasons"]  # normal queue confidence
+    assert not pre_check(tri(qc=0.3), HITS, "reset password")["reasons"]  # normal (calibrated) queue confidence
 
 
 def test_low_similarity_reason():

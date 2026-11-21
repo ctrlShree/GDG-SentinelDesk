@@ -32,7 +32,7 @@ from sklearn.pipeline import FeatureUnion, Pipeline
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sentineldesk import MODELS_DIR, TARGETS  # noqa: E402
 from sentineldesk.data import load_kb, ticket_text  # noqa: E402
-from sentineldesk.triage import HIGH_LABELS, apply_t_high  # noqa: E402
+from sentineldesk.triage import HIGH_LABELS, apply_t_high, choose_t_high  # noqa: E402
 
 SEED = 42
 VAL_FRAC = 0.10
@@ -69,16 +69,6 @@ def fit_all(df, fast: bool, tag: str) -> dict:
 
 def labelled(df, target):
     return df[df[target].notna() & (df[target].astype(str) != "")]
-
-
-def choose_t_high(p_high: np.ndarray, y_is_high: np.ndarray, target_recall: float) -> float:
-    """Largest threshold on P(high-priority) whose recall on validation is >= target_recall."""
-    best = 0.0
-    for t in np.round(np.arange(0.05, 0.951, 0.01), 2):
-        pred = p_high >= t
-        if y_is_high.sum() and pred[y_is_high].mean() >= target_recall:
-            best = float(t)
-    return best
 
 
 def main() -> None:

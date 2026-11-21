@@ -27,11 +27,13 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sentineldesk import MODELS_DIR, TARGETS  # noqa: E402
-from sentineldesk.triage import _entry, apply_t_high  # noqa: E402
+from sentineldesk.triage import _entry, apply_t_high, temper  # noqa: E402
 
 MAX_BAND_ACC = {"type": 0.50, "queue": 0.25, "priority": 0.50}
 BAND = 0.05
 MIN_BAND_N = 15
+# Never let a rule silently switch off: if no band is bad enough, fall back to this floor.
+FLOOR = {"type": 0.45, "queue": 0.15, "priority": 0.45}
 OFF_DOMAIN = [
     "Write me a poem about cats", "asdfgh qwertz lorem ipsum 12345", "What is the capital of France?",
     "Tell me a joke about penguins", "Schreib mir ein Gedicht über den Frühling", "Who won the football match yesterday?",
@@ -41,7 +43,7 @@ OFF_DOMAIN = [
 ]
 
 
-def tune_conf(vp: pd.DataFrame, t_high) -> tuple[dict, dict]:
+def tune_conf(vp: pd.DataFrame, t_high, temperature: dict | None = None) -> tuple[dict, dict]:
     thresholds, report = {}, {}
     for t in TARGETS:
         m = vp[t].notna() & (vp[t].astype(str) != "")
@@ -49,6 +51,10 @@ def tune_conf(vp: pd.DataFrame, t_high) -> tuple[dict, dict]:
         conf, correct = [], []
         for probs_json, y in zip(rows[f"probs_{t}"], rows[t].astype(str)):
             probs = json.loads(probs_json)
+            T = (temperature or {}).get(t)
+            if T:
+                keys = list(probs)
+                probs = dict(zip(keys, temper(np.array([probs[k] for k in keys]), T)))
             label = apply_t_high(probs, t_high) if t == "priority" else max(probs, key=probs.get)
             conf.append(_entry(label, probs)["confidence"])
             correct.append(label == y)
@@ -61,6 +67,7 @@ def tune_conf(vp: pd.DataFrame, t_high) -> tuple[dict, dict]:
                 bands.append([float(lo), round(acc, 3), round(float(b.mean()), 4)])
                 if acc < MAX_BAND_ACC[t]:
                     best = round(float(lo + BAND), 2)
+        best = max(best, FLOOR[t])
         below = conf < best
         thresholds[t] = best
         report[t] = {"threshold": best, "max_band_acc": MAX_BAND_ACC[t], "bands_lo_acc_share": bands,
@@ -120,11 +127,12 @@ def main() -> None:
     args = ap.parse_args()
 
     cfg_path = args.val_preds.parent / "triage_config.json"
-    t_high = json.loads(cfg_path.read_text())["t_high"] if cfg_path.exists() else None
+    cfg = json.loads(cfg_path.read_text()) if cfg_path.exists() else {}
+    t_high, temperature = cfg.get("t_high"), cfg.get("temperature")
     vp = pd.read_parquet(args.val_preds)
-    print(f"validation rows: {len(vp)} (t_high={t_high})")
+    print(f"validation rows: {len(vp)} (t_high={t_high}, temperature={temperature})")
 
-    conf, conf_report = tune_conf(vp, t_high)
+    conf, conf_report = tune_conf(vp, t_high, temperature)
     print("TAU_CONF per target:", json.dumps(conf_report, indent=2))
     sim = tune_sim(vp, args.n_sim)
     if sim:

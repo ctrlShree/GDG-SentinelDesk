@@ -22,7 +22,7 @@ from sentineldesk.triage import HIGH_LABELS
 TAU_CONF = 0.45
 # Tuned on out-of-sample kb validation probabilities by scripts/tune_gate.py (see docs/gate.md);
 # models/gate.json overrides these when present.
-CONF_THRESHOLDS = {"type": 0.50, "queue": 0.20, "priority": 0.45}
+CONF_THRESHOLDS = {"type": 0.45, "queue": 0.25, "priority": 0.50}  # on temperature-calibrated confidences
 TAU_SIM = 0.80  # placeholder until B's score distribution; models/gate.json overrides
 GATE_CONFIG = MODELS_DIR / "gate.json"
 
