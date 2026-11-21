@@ -46,13 +46,25 @@ python scripts/build_index.py        # -> models/kb.faiss + models/kb_meta.parqu
 python scripts/tune_gate.py --write  # -> models/gate.json (gate thresholds, KB only)
 python scripts/evaluate.py --n 2000  # -> reports/metrics.json + metrics.md (holdout)
 
-# terminal 1: API
-uvicorn api:app --port 8000
+# terminal 1: API (wait for "Application startup complete")
+python -m uvicorn api:app --port 8000
 # terminal 2: console
-cd frontend && npm install && npm run dev      # http://localhost:3000
+cd frontend && npm install && npm run dev
 ```
-For the demo, use the production build: `cd frontend && npm run build && npm start`.
-If the frontend fails, the Streamlit fallback runs the same pipeline: `streamlit run app.py`.
+Then open the console in your browser: **http://localhost:3000**
+(or from a terminal: `start http://localhost:3000` on Windows, `open http://localhost:3000` on macOS).
+
+### Running the demo
+```bash
+# terminal 1
+python -m uvicorn api:app --port 8000
+# terminal 2 (production build is faster and steadier)
+cd frontend && npm run build && npx next start -p 3000
+# terminal 3, or just paste the URL into the browser
+start http://localhost:3000
+```
+Check for the green "API online" dot in the header and click **Reset** before you start.
+If the frontend fails, the Streamlit fallback runs the same pipeline: `python -m streamlit run app.py` (opens http://localhost:8501).
 
 Tests: `pytest -q` and `cd frontend && npm run lint`.
 
