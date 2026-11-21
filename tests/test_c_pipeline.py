@@ -86,3 +86,32 @@ def test_burst_counts_critical_priority():
     for i in range(3):
         r = b.add(f"C{i}", _unit([1, 0, 0, 0]), crit, ts=i, text="login outage")
     assert r["outage"] and r["cluster_size"] == 3
+
+
+def test_burst_centering_removes_shared_direction():
+    # every ticket shares a big common component (like e5's "this is a ticket" direction);
+    # raw cosine says everything is similar, centered cosine only groups the real cluster
+    common = np.array([5.0, 0, 0, 0, 0, 0])
+    vpn = [common + np.array([0, 1, 0.1, 0, 0, 0]), common + np.array([0, 1, 0, 0.1, 0, 0]),
+           common + np.array([0, 1, 0, 0, 0.1, 0])]
+    other = [common + np.array([0, 0, 0, 0, 1, 0]), common + np.array([0, 0, 0, 0, 0, 1]),
+             common + np.array([0, 0, 1, 0, 0, 0])]
+    raw = BurstDetector(sim_threshold=0.55)
+    assert [raw.add(f"O{i}", v, INCIDENT, ts=i)["outage"] for i, v in enumerate(other)][-1]  # false alarm
+    b = BurstDetector(sim_threshold=0.55, center=common)
+    assert not any(b.add(f"O{i}", v, INCIDENT, ts=i)["outage"] for i, v in enumerate(other))
+    c = BurstDetector(sim_threshold=0.55, center=common)
+    results = [c.add(f"V{i}", v, INCIDENT, ts=i) for i, v in enumerate(vpn)]
+    assert results[-1]["outage"] and results[-1]["cluster_size"] == 3
+
+
+def test_burst_members_include_one_hop():
+    b = BurstDetector(sim_threshold=0.8)
+    # cosines: A2-A 0.86, A2-C 0.77, A2-D 0.73, A-C 0.89, A-D 0.91, C-D 0.995
+    a2, a = _unit([1, 0.6, 0]), _unit([1, 0, 0])
+    c, d = _unit([1, 0, 0.5]), _unit([1, -0.1, 0.45])
+    b.add("A2", a2, INCIDENT, ts=0)
+    b.add("A", a, INCIDENT, ts=1)
+    b.add("C", c, INCIDENT, ts=2)
+    r = b.add("D", d, INCIDENT, ts=3)
+    assert r["outage"] and set(r["members"]) == {"A2", "A", "C", "D"}  # A2 only via A

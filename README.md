@@ -109,7 +109,7 @@ The dataset is shuffled with `random_state=42` and split 80/20 exactly as in the
 ## 9. Bonus features
 - **Cross-lingual retrieval**: multilingual e5 embeddings put EN and DE in one space.
 - **PII guardrail**: masking before any model call; the console shows a "PII masked" tag.
-- **Outage burst banner**: incident-like tickets with cosine ≥ 0.85 to two or more others in a 15-minute window raise the banner.
+- **Outage burst banner**: an incident-like ticket (high/critical priority or type Incident/Problem) with two or more similar tickets in the last 15 minutes raises the banner. Raw e5 cosines between *any* two tickets are ~0.86, so similarities are computed on embeddings centered by the mean KB ticket embedding (cached in `models/burst_center.npz`), threshold 0.55. On real KB incidents this gives a ~0.2% false-outage rate for 10 unrelated tickets, while EN + DE tickets about the same VPN outage cluster.
 
 ## 10. Limitations
 - The demo-style tickets are shorter and less formal than the dataset's synthetic tickets, so the gate is sometimes more cautious than needed (for example, a short German password reset can be classified as a high-priority Incident and escalated). That is the safe direction.

@@ -10,9 +10,11 @@ import time
 import uuid
 
 import numpy as np
+import pandas as pd
 
+from sentineldesk import MODELS_DIR
 from sentineldesk.burst import BurstDetector
-from sentineldesk.data import ticket_text
+from sentineldesk.data import KB_PATH, ticket_text
 from sentineldesk.escalation import decide, pre_check
 from sentineldesk.generator import draft_reply
 from sentineldesk.lang import detect_language
@@ -64,14 +66,47 @@ def new_ticket_id() -> str:
     return f"LIVE-{uuid.uuid4().hex[:8].upper()}"
 
 
+CENTER_PATH = MODELS_DIR / "burst_center.npz"
+CENTER_SAMPLE = 1000
+_PROBE = "VPN connection fails for all users since this morning"
+
+
+def burst_center(retriever) -> np.ndarray | None:
+    """Mean query embedding of generic KB tickets, used to center burst similarities.
+
+    Cached in models/burst_center.npz together with a probe embedding, so the cache is
+    rebuilt automatically when the embedding model changes (e.g. stub -> real e5).
+    Returns None (plain cosine) if the KB split hasn't been built.
+    """
+    try:
+        probe = np.asarray(retriever.embed([_PROBE], is_query=True)[0], dtype=np.float32)
+        if CENTER_PATH.exists():
+            cached = np.load(CENTER_PATH)
+            if cached["probe"].shape == probe.shape and np.allclose(cached["probe"], probe, atol=1e-4):
+                return cached["center"]
+        if not KB_PATH.exists():
+            return None
+        kb = pd.read_parquet(KB_PATH, columns=["subject", "body"])
+        kb = kb.sample(min(CENTER_SAMPLE, len(kb)), random_state=1)
+        emb = retriever.embed([ticket_text(s, b) for s, b in zip(kb.subject, kb.body)], is_query=True)
+        center = np.asarray(emb, dtype=np.float32).mean(axis=0)
+        CENTER_PATH.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(CENTER_PATH, center=center, probe=probe)
+        return center
+    except Exception:
+        log.exception("could not compute burst center; using plain cosine")
+        return None
+
+
 class Pipeline:
     def __init__(self):
         self.triager = Triager()
         self.retriever = Retriever()
-        self.burst = BurstDetector()
+        self.burst_center = burst_center(self.retriever)
+        self.burst = BurstDetector(center=self.burst_center)
 
     def reset_burst(self) -> None:
-        self.burst = BurstDetector()
+        self.burst = BurstDetector(center=self.burst_center)
 
     def run(self, subject, body, ts=None) -> dict:
         if not (body or "").strip():
