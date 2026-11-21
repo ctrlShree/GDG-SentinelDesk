@@ -2,8 +2,8 @@ import Card from "./Card";
 
 type M = Record<string, unknown>;
 
-// metrics.json comes from A's scripts/evaluate.py; accept a few plausible layouts
-// until the final keys are agreed.
+// metrics.json is written by scripts/evaluate.py. The extra paths are from before
+// the key names were settled; harmless to keep.
 function num(m: M, ...paths: string[]): number | null {
   for (const p of paths) {
     let cur: unknown = m;

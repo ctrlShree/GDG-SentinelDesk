@@ -1,7 +1,7 @@
-"""SentinelDesk REST API (Dev C). Run: uvicorn api:app --port 8000
+"""REST API for the console. Run with: uvicorn api:app --port 8000
 
-Frozen JSON shapes are documented in PLAN.md. One Pipeline instance is shared so
-models load once and burst state persists across requests.
+Response shapes are in PLAN_OF_ACTION.md. There's a single Pipeline so the models
+load once and the burst window survives between requests.
 """
 from __future__ import annotations
 
@@ -27,11 +27,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_lock = threading.Lock()  # burst state and models are shared; keep runs serialised
+_lock = threading.Lock()  # one ticket at a time, the burst window isn't thread safe
 try:
     PIPE: Pipeline | None = Pipeline()
     _load_error = None
-except Exception as e:  # keep the API up so /api/health can report the problem
+except Exception as e:  # still start, so /api/health can say what's wrong
     PIPE, _load_error = None, f"{type(e).__name__}: {e}"
 
 

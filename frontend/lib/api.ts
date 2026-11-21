@@ -23,7 +23,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
       const body = await res.json();
       if (body?.detail) detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
     } catch {
-      /* non-JSON error body (e.g. proxy failure) */
+      /* body wasn't JSON, e.g. the proxy itself failed */
     }
     if (res.status >= 500 && res.status !== 503) detail = `Backend error: ${detail}`;
     throw new ApiError(detail, res.status);

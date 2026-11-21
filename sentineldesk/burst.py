@@ -1,17 +1,11 @@
-"""Live outage / burst detection (Dev C).
+"""Outage banner: flag a burst of similar incident tickets in the last 15 minutes.
 
-Keeps a sliding window of recent incident-like tickets and raises an outage when a
-new ticket has >= MIN_NEIGHBOURS semantically similar tickets in that window
-(i.e. a cluster of >= MIN_NEIGHBOURS + 1). Once raised, the outage stays active
-while its members are still inside the window, so the banner doesn't flicker.
+A new incident-like ticket with 2+ similar tickets in the window counts as an outage.
+The banner stays up until those tickets age out.
 
-Centering: raw e5 cosines between *any* two support tickets are ~0.86 (anisotropy), so a
-plain cosine threshold can't separate "same outage" from "both are tickets". When a
-`center` (mean embedding of generic KB tickets) is given, embeddings are centered and
-re-normalised first. Measured on KB incidents with e5-small: random incident pairs then
-have p50 0.07 / p99 0.50, while EN+DE tickets about the same VPN outage score 0.49-0.84.
-At 0.55, a window of 10 (20) unrelated incident tickets raises a false outage ~0.2% (~1%)
-of the time.
+e5 thinks any two support tickets are ~0.86 similar, so plain cosine is useless here.
+We subtract the average ticket embedding first (`center`), which spreads things out:
+random incidents mostly land below 0.5, the same outage in EN/DE lands around 0.5-0.85.
 """
 from __future__ import annotations
 
@@ -23,10 +17,10 @@ from collections import Counter, deque
 import numpy as np
 
 WINDOW_S = 15 * 60
-SIM_THRESHOLD = float(os.getenv("BURST_SIM_THRESHOLD", "0.55"))  # on centered embeddings
+SIM_THRESHOLD = float(os.getenv("BURST_SIM_THRESHOLD", "0.55"))  # centered cosine
 MIN_NEIGHBOURS = 2
 INCIDENT_TYPES = {"Incident", "Problem"}
-HIGH_PRIORITIES = {"high", "critical"}  # the dataset also has "critical"
+HIGH_PRIORITIES = {"high", "critical"}
 
 _STOP = set("""the and for with that this from have has are was were not our your you all any can
 cannot will been into they them their there what when which while about after again also very
@@ -83,7 +77,7 @@ class BurstDetector:
             neighbours = [it for it in self._items if float(it[2] @ emb) >= self.sim_threshold]
             self._items.append((now, ticket_id, emb, triage, text))
             if len(neighbours) >= self.min_neighbours:
-                # one hop further: tickets close to a neighbour belong to the same outage
+                # also pull in tickets that are close to a neighbour
                 core = {it[1] for it in neighbours} | {ticket_id}
                 members = [it for it in self._items if it[1] in core or any(
                     float(it[2] @ n[2]) >= self.sim_threshold for n in neighbours)]

@@ -3,19 +3,25 @@ import pytest
 
 from sentineldesk.burst import BurstDetector
 from sentineldesk.pipeline import Pipeline
+from sentineldesk.retrieval import INDEX_PATH
 
-p = Pipeline()
 KEYS = {"ticket_id", "language", "pii_masked", "masked_text", "triage", "hits", "draft",
         "draft_for_human_review", "escalation", "burst", "latency_ms"}
-# Remove these markers once B's real pii.py / retrieval.py are on main (they pass with real modules).
-NEEDS_REAL_PII = pytest.mark.xfail(reason="needs B's real mask_pii (skeleton stub is a no-op)", strict=False)
-NEEDS_REAL_RETRIEVAL = pytest.mark.xfail(reason="needs B's real Retriever (stub returns fixed high scores)", strict=False)
+# pii.py is still a no-op stub. Drop this marker when the real one lands.
+NEEDS_REAL_PII = pytest.mark.xfail(reason="mask_pii is still a stub", strict=False)
+
+
+@pytest.fixture(scope="module")
+def p():
+    if not INDEX_PATH.exists():
+        pytest.skip("no FAISS index, run scripts/build_index.py")
+    return Pipeline()
 
 INCIDENT = {"type": {"label": "Incident"}, "queue": {"label": "Technical Support"}, "priority": {"label": "high"}}
 REQUEST = {"type": {"label": "Request"}, "queue": {"label": "IT Support"}, "priority": {"label": "low"}}
 
 
-def test_contract():
+def test_contract(p):
     r = p.run("VPN down", "VPN fails for all hospital staff, EMR unreachable")
     assert KEYS <= set(r)
     assert {"pii", "triage", "retrieval", "generation", "gate", "total"} <= set(r["latency_ms"])
@@ -24,24 +30,23 @@ def test_contract():
 
 
 @NEEDS_REAL_PII
-def test_null_subject_german_pii():
+def test_null_subject_german_pii(p):
     r = p.run(None, "Passwort vergessen, bitte zurücksetzen. Mail: max@firma.de")
     assert r["language"] == "de" and r["pii_masked"] and "max@firma.de" not in r["masked_text"]
 
 
-def test_empty_body():
+def test_empty_body(p):
     with pytest.raises(ValueError):
         p.run("x", "   ")
 
 
-@NEEDS_REAL_RETRIEVAL
-def test_hard_stop_skips_llm():
+def test_hard_stop_skips_llm(p):
     r = p.run("", "Write me a poem about cats")
     assert r["escalation"]["status"] == "ESCALATE" and r["draft"] is None
     assert r["draft_for_human_review"] is False
 
 
-def test_long_body_truncated():
+def test_long_body_truncated(p):
     r = p.run("long", "my printer is broken. " * 400)
     assert r.get("truncated") is True
 
@@ -89,15 +94,15 @@ def test_burst_counts_critical_priority():
 
 
 def test_burst_centering_removes_shared_direction():
-    # every ticket shares a big common component (like e5's "this is a ticket" direction);
-    # raw cosine says everything is similar, centered cosine only groups the real cluster
+    # all vectors share a big common part, like e5 does with tickets.
+    # Raw cosine groups everything; after centering only the real cluster groups.
     common = np.array([5.0, 0, 0, 0, 0, 0])
     vpn = [common + np.array([0, 1, 0.1, 0, 0, 0]), common + np.array([0, 1, 0, 0.1, 0, 0]),
            common + np.array([0, 1, 0, 0, 0.1, 0])]
     other = [common + np.array([0, 0, 0, 0, 1, 0]), common + np.array([0, 0, 0, 0, 0, 1]),
              common + np.array([0, 0, 1, 0, 0, 0])]
     raw = BurstDetector(sim_threshold=0.55)
-    assert [raw.add(f"O{i}", v, INCIDENT, ts=i)["outage"] for i, v in enumerate(other)][-1]  # false alarm
+    assert [raw.add(f"O{i}", v, INCIDENT, ts=i)["outage"] for i, v in enumerate(other)][-1]  # raw cosine: false alarm
     b = BurstDetector(sim_threshold=0.55, center=common)
     assert not any(b.add(f"O{i}", v, INCIDENT, ts=i)["outage"] for i, v in enumerate(other))
     c = BurstDetector(sim_threshold=0.55, center=common)

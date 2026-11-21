@@ -1,4 +1,4 @@
-// TypeScript mirror of the frozen PipelineResult contract (see PLAN.md).
+// Keep in sync with PipelineResult in PLAN_OF_ACTION.md section 4.
 export type Label = { label: string; confidence: number; probs: Record<string, number> };
 export type Triage = { type: Label; queue: Label; priority: Label };
 export type Hit = {

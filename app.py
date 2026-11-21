@@ -1,4 +1,4 @@
-"""Streamlit fallback console (Dev C). Use only if the Next.js frontend fails.
+"""Backup console in Streamlit, only for when the Next.js frontend won't start.
 
 Run: streamlit run app.py   (calls Pipeline().run directly, no API needed)
 """

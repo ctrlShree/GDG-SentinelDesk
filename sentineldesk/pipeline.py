@@ -1,7 +1,7 @@
-"""End-to-end SentinelDesk pipeline (Dev C).
+"""Runs one ticket through everything.
 
-Order: mask PII -> detect language -> triage -> retrieve top 5 -> pre_check gate
--> (skip the LLM on a hard stop) -> grounded draft -> final gate -> burst update.
+mask PII -> language -> triage -> top 5 precedents -> pre_check
+-> draft (skipped on a hard stop) -> decide -> burst
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ STAGES = ("pii", "triage", "retrieval", "generation", "gate")
 
 
 class Timer:
-    """Times named stages; repeated stage names accumulate."""
+    """Per-stage timings in ms. Calling the same stage twice adds up."""
 
     def __init__(self):
         self.t0 = time.perf_counter()
@@ -50,7 +50,7 @@ class Timer:
 
 
 def to_jsonable(obj):
-    """Recursively convert numpy scalars/arrays so FastAPI can serialise the result."""
+    """FastAPI chokes on numpy types, so turn them into plain Python."""
     if isinstance(obj, dict):
         return {str(k): to_jsonable(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -72,11 +72,11 @@ _PROBE = "VPN connection fails for all users since this morning"
 
 
 def burst_center(retriever) -> np.ndarray | None:
-    """Mean query embedding of generic KB tickets, used to center burst similarities.
+    """Average embedding of 1,000 KB tickets, for centering burst similarity.
 
-    Cached in models/burst_center.npz together with a probe embedding, so the cache is
-    rebuilt automatically when the embedding model changes (e.g. stub -> real e5).
-    Returns None (plain cosine) if the KB split hasn't been built.
+    Cached in models/burst_center.npz. We also store the embedding of a fixed probe
+    sentence; if that changes, the embedding model changed and we rebuild.
+    None if the KB split isn't built yet (burst then uses plain cosine).
     """
     try:
         probe = np.asarray(retriever.embed([_PROBE], is_query=True)[0], dtype=np.float32)
@@ -126,7 +126,7 @@ class Pipeline:
         if not pre["hard_stop"]:
             try:
                 draft = T("generation", lambda: draft_reply(ms, mb, lang, hits))
-            except Exception as e:  # never let the LLM path take the console down
+            except Exception as e:  # a broken LLM call shouldn't take the console down
                 log.exception("draft_reply failed")
                 gen_error = f"Draft generation failed ({type(e).__name__})"
 
@@ -155,5 +155,5 @@ class Pipeline:
             "latency_ms": T.as_dict_with_total(),
         }
         if truncated:
-            result["truncated"] = True  # extra key; frontend shows a note
+            result["truncated"] = True  # not in the contract, the UI just shows a note
         return to_jsonable(result)

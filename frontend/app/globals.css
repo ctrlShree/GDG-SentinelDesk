@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Light operator console: high contrast reads best on a projector. */
+/* light theme on purpose, dark UIs wash out on projectors */
 html {
   color-scheme: light;
 }
