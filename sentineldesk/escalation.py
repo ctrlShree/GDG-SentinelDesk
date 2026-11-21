@@ -32,12 +32,22 @@ _OUTAGE = re.compile(
     r"ausgefallen|ausfall|störung|nicht erreichbar|niemand kann|kein mitarbeiter|alle mitarbeiter)\b",
     re.I)
 
+# Phrases stay narrow: bare "damages", "penalties" or "in writing" match ordinary tickets
+# ("financial damages", "help in writing a report"), so only multi-word legal/SLA asks are listed.
 RISKY_INTENTS = {
-    "refund": r"refund|money back|compensat\w*|chargeback|erstattung|rückerstattung|erstatten|"
+    "refund": r"refund|money back|compensat\w*|chargeback|reimburs\w*|reverse (the|this|my) charge|"
+              r"erstattung|rückerstattung|erstatten|zurückerstatt\w*|rückzahlung|geld zurück|"
               r"entschädigung|gutschrift",
     "pricing": r"price|pricing|quote|discount|preis\w*|angebot|rabatt",
-    "legal": r"legal|lawsuit|contract|liability|guarantee\w*|sla credit|vertrag|haftung|garantie\w*",
-    "destructive": r"delete all|wipe|alle daten löschen",
+    "legal": r"legal|lawsuit|contract|liability|guarantee\w*|sla credit|service credits?|"
+             r"sla (breach|violation|penalt\w*|compensation)|breach(ed)? (of )?(the |our |your )?(contract|sla|agreement)|"
+             r"violat\w* (the |our |your )?(sla|contract|agreement)|lawyer|attorney|sue (you|your company)\b|"
+             r"take (you|this|it) to court|small claims|liquidated damages|"
+             r"(put|confirm|commit to) (it |this |that )?in writing|written (guarantee|commitment|assurance)|"
+             r"vertrag|haftung|garantie\w*|anwalt\w*|rechtliche schritte|schadens?ersatz|vertragsstrafe|"
+             r"sla-?verletzung|vertragsbruch|schriftlich (zusichern|zusagen|bestätigen|garantieren)|zusicherung|"
+             r"sichern sie (uns |mir )?(schriftlich )?zu\b",
+    "destructive": r"delete all|wipe|drop (the )?(production )?database|alle daten löschen|lösche alle",
     "credentials": r"admin password|share (your |the )?credentials|zugangsdaten",
 }
 _INTENT_RE = {k: re.compile(rf"\b({v})", re.I) for k, v in RISKY_INTENTS.items()}
@@ -45,7 +55,13 @@ _INTENT_RE = {k: re.compile(rf"\b({v})", re.I) for k, v in RISKY_INTENTS.items()
 _INJECTION = re.compile(
     r"(ignore (all |any )?(the )?(previous|prior|above) (instructions|rules)|ignore all instructions|"
     r"disregard (all |the )?(previous|prior|above|system)|system prompt|you are now|"
-    r"ignoriere .*anweisungen|vergiss .*regeln)",
+    r"(forget|disregard|override|bypass) (all |any |your |the |of )*(previous |prior |earlier |above |existing )?"
+    r"(instructions|rules|guidelines|directives)|"
+    r"(reveal|print|show|output|repeat|leak) (me )?(your (system |hidden |initial |original )?|"
+    r"the (system|hidden|initial|original) )(prompt|instructions)|developer mode|jailbreak|"
+    r"(ignoriere|ignorieren sie|missachte|übergehe|vergiss|vergessen sie) .{0,40}(anweisungen|regeln|vorgaben|instruktionen)|"
+    r"system-?prompt|du bist (jetzt|ab sofort)|sie sind (jetzt|ab sofort) ein|neue anweisungen?:|"
+    r"(zeige?|gib|nenne) (mir )?(deine|ihre|den) (anweisungen|regeln|system-?prompt))",
     re.I)
 
 
